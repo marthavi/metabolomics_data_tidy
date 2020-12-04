@@ -1,0 +1,102 @@
+---
+title: "Cacao Data Tidy"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1. Environment
+```{r environ, echo=TRUE, message=FALSE, warning=FALSE}
+
+library(timeSeries)
+library(reshape2)
+library(cluster)
+library(gplots)
+library(ggfortify)
+library(RColorBrewer)
+library(ggplot2)
+library(tidyverse)
+library(base)
+library(graphics)
+library(stats)
+library(fBasics)
+library(pvclust)
+library(pca3d)
+library(randomForest)
+library(varSelRF)
+library(e1071)
+library(VennDiagram)
+library(googlesheets4)
+```
+
+# 2.Data description and acquisition 
+
+This data comes from the LC/MS TOF based untargeted metabolomics of cacao seed colected from three different regions of Colombia: Bajo calima (Bcal), Cisneros (Cis), Sabaletas (Sab). From each region the metabolomic profile was performed under three different fermentation time (72, 96, and 120 h)   
+
+```{r acquisition}
+raw.data <- read_csv(file = "Data/Buenaventura05222020.csv")
+head(raw.data)
+```
+
+# 3. Data tidy
+For data tidying we have to take into the account main parameters:
+1. Check character and negative values and replace it by cero
+2. Peak width: all masses that have a peak width less than 3 sec should be filtered.
+3. The masses must be present in the 90% of all the samples
+4. The intensity of the masses: It will depend of the noise threshold. In some cases was 500 units of intensity
+5. The remaining NAs will be replaced by the baseline signal (minimum value != 0)
+
+Taking in to the account that the data is already filtered and normalized I will omit step 2 and 4
+
+## 3.1. Data tidy Step 2. 
+```{r tidy2}
+# Extract numeric df
+df <- raw.data %>% 
+  select(4:4411) 
+
+# Convert caracter values to NA  
+df.1 <- 
+  df %>%  
+  map_df(as.character) %>% 
+  map_df(as.numeric)
+
+# identifying negative data in the df
+df.1 %>% 
+  summarize(pos = sum(.>0, na.rm = T),
+            neg = sum(.<0, na.rm = T), 
+            zero = sum(. == 0, na.rm = T),
+            na = sum(is.na(.)))
+
+# Convert NA to Zero
+df.1[is.na(df.1)] <- 0
+
+
+# Step 2. I will remove the masses that that have zero value in the 90% of the samples
+data.WO_zero <- df.1[, colSums(df.1 == 0)/nrow(df.1) < .9, drop = FALSE]
+
+```
+
+## 3.2. Data tidy Step 5. 
+The missing values and zero will be replaced with the minimum value. Assuming the minimum as the baseline. 
+
+```{r tidy4}
+# Step 5.
+data.WO_zero[data.WO_zero <= 0] <- NA
+minimum <- min(data.WO_zero, na.rm = T)
+```
+
+```{r}
+min.fill <- data.WO_zero
+min.fill[is.na(min.fill)] <- minimum
+
+min.fill %>% 
+  summarize(pos = sum(.>0, na.rm = T),
+            neg = sum(.<0, na.rm = T), 
+            zero = sum(. == 0, na.rm = T),
+            na = sum(is.na(.)),
+            min = min(.))
+
+write.csv(min.fill, file = "Data/cleanData.csv")
+```
